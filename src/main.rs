@@ -462,6 +462,7 @@ async fn send_token(data: web::Json<SendTokenRequest>) -> impl Responder {
         error: None,
     })
 }
+use std::env;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
