@@ -1,6 +1,5 @@
-
-use actix_web::{web, App, HttpResponse, HttpServer, Responder, http::StatusCode};
-use base64;
+use actix_web::{web, App, HttpResponse, HttpServer, Responder};Add commentMore actions
+use bs58;
 use serde::{Deserialize, Serialize};
 use solana_sdk::{
     pubkey::Pubkey,
@@ -9,7 +8,6 @@ use solana_sdk::{
 };
 use spl_token::instruction as token_instruction;
 use std::str::FromStr;
-use std::env;
 
 #[derive(Serialize, Deserialize)]
 struct ApiResponse<T> {
@@ -100,7 +98,7 @@ struct SendTokenRequest {
 async fn generate_keypair() -> impl Responder {
     let keypair = Keypair::new();
     let pubkey = keypair.pubkey().to_string();
-    let secret = base64::encode(keypair.to_bytes());
+    let secret = bs58::encode(keypair.to_bytes()).into_string();
 
     HttpResponse::Ok().json(ApiResponse {
         success: true,
@@ -110,18 +108,10 @@ async fn generate_keypair() -> impl Responder {
 }
 
 async fn create_token(data: web::Json<CreateTokenRequest>) -> impl Responder {
-    if data.mint_authority.is_empty() || data.mint.is_empty() {
-        return HttpResponse::BadRequest().json(ApiResponse::<()> {
-            success: false,
-            data: None,
-            error: Some("Mint authority and mint are required".to_string()),
-        });
-    }
-
     let mint_authority = match Pubkey::from_str(&data.mint_authority) {
         Ok(pubkey) => pubkey,
         Err(_) => {
-            return HttpResponse::BadRequest().json(ApiResponse::<()> {
+            return HttpResponse::Ok().json(ApiResponse::<()> {
                 success: false,
                 data: None,
                 error: Some("Invalid mint authority public key".to_string()),
@@ -132,7 +122,7 @@ async fn create_token(data: web::Json<CreateTokenRequest>) -> impl Responder {
     let mint = match Pubkey::from_str(&data.mint) {
         Ok(pubkey) => pubkey,
         Err(_) => {
-            return HttpResponse::BadRequest().json(ApiResponse::<()> {
+            return HttpResponse::Ok().json(ApiResponse::<()> {
                 success: false,
                 data: None,
                 error: Some("Invalid mint public key".to_string()),
@@ -140,22 +130,14 @@ async fn create_token(data: web::Json<CreateTokenRequest>) -> impl Responder {
         }
     };
 
-    let instruction = match token_instruction::initialize_mint(
+    let instruction = token_instruction::initialize_mint(
         &spl_token::id(),
         &mint,
         &mint_authority,
         None,
         data.decimals,
-    ) {
-        Ok(instruction) => instruction,
-        Err(_) => {
-            return HttpResponse::BadRequest().json(ApiResponse::<()> {
-                success: false,
-                data: None,
-                error: Some("Failed to create mint instruction".to_string()),
-            });
-        }
-    };
+    )
+    .unwrap();
 
     let accounts = instruction
         .accounts
@@ -172,33 +154,17 @@ async fn create_token(data: web::Json<CreateTokenRequest>) -> impl Responder {
         data: Some(InstructionResponse {
             program_id: spl_token::id().to_string(),
             accounts,
-            instruction_data: base64::encode(instruction.data),
+            instruction_data: bs58::encode(instruction.data).into_string(),
         }),
         error: None,
     })
 }
 
 async fn mint_token(data: web::Json<MintTokenRequest>) -> impl Responder {
-    if data.mint.is_empty() || data.destination.is_empty() || data.authority.is_empty() {
-        return HttpResponse::BadRequest().json(ApiResponse::<()> {
-            success: false,
-            data: None,
-            error: Some("Mint, destination, and authority are required".to_string()),
-        });
-    }
-
-    if data.amount == 0 {
-        return HttpResponse::BadRequest().json(ApiResponse::<()> {
-            success: false,
-            data: None,
-            error: Some("Amount must be greater than zero".to_string()),
-        });
-    }
-
     let mint = match Pubkey::from_str(&data.mint) {
         Ok(pubkey) => pubkey,
         Err(_) => {
-            return HttpResponse::BadRequest().json(ApiResponse::<()> {
+            return HttpResponse::Ok().json(ApiResponse::<()> {
                 success: false,
                 data: None,
                 error: Some("Invalid mint address".to_string()),
@@ -209,7 +175,7 @@ async fn mint_token(data: web::Json<MintTokenRequest>) -> impl Responder {
     let destination = match Pubkey::from_str(&data.destination) {
         Ok(pubkey) => pubkey,
         Err(_) => {
-            return HttpResponse::BadRequest().json(ApiResponse::<()> {
+            return HttpResponse::Ok().json(ApiResponse::<()> {
                 success: false,
                 data: None,
                 error: Some("Invalid destination address".to_string()),
@@ -220,7 +186,7 @@ async fn mint_token(data: web::Json<MintTokenRequest>) -> impl Responder {
     let authority = match Pubkey::from_str(&data.authority) {
         Ok(pubkey) => pubkey,
         Err(_) => {
-            return HttpResponse::BadRequest().json(ApiResponse::<()> {
+            return HttpResponse::Ok().json(ApiResponse::<()> {
                 success: false,
                 data: None,
                 error: Some("Invalid authority address".to_string()),
@@ -228,23 +194,15 @@ async fn mint_token(data: web::Json<MintTokenRequest>) -> impl Responder {
         }
     };
 
-    let instruction = match token_instruction::mint_to(
+    let instruction = token_instruction::mint_to(
         &spl_token::id(),
         &mint,
         &destination,
         &authority,
         &[],
         data.amount,
-    ) {
-        Ok(instruction) => instruction,
-        Err(_) => {
-            return HttpResponse::BadRequest().json(ApiResponse::<()> {
-                success: false,
-                data: None,
-                error: Some("Failed to create mint-to instruction".to_string()),
-            });
-        }
-    };
+    )
+    .unwrap();
 
     let accounts = instruction
         .accounts
@@ -261,7 +219,7 @@ async fn mint_token(data: web::Json<MintTokenRequest>) -> impl Responder {
         data: Some(InstructionResponse {
             program_id: spl_token::id().to_string(),
             accounts,
-            instruction_data: base64::encode(instruction.data),
+            instruction_data: bs58::encode(instruction.data).into_string(),
         }),
         error: None,
     })
@@ -269,28 +227,17 @@ async fn mint_token(data: web::Json<MintTokenRequest>) -> impl Responder {
 
 async fn sign_message(data: web::Json<SignMessageRequest>) -> impl Responder {
     if data.message.is_empty() || data.secret.is_empty() {
-        return HttpResponse::BadRequest().json(ApiResponse::<()> {
+        return HttpResponse::Ok().json(ApiResponse::<()> {
             success: false,
             data: None,
-            error: Some("Message and secret are required".to_string()),
+            error: Some("Missing required fields".to_string()),
         });
     }
 
-    let secret_bytes = match base64::decode(&data.secret) {
+    let secret_bytes = match bs58::decode(&data.secret).into_vec() {
         Ok(bytes) => bytes,
         Err(_) => {
-            return HttpResponse::BadRequest().json(ApiResponse::<()> {
-                success: false,
-                data: None,
-                error: Some("Invalid secret key format".to_string()),
-            });
-        }
-    };
-
-    let keypair = match Keypair::from_bytes(&secret_bytes) {
-        Ok(keypair) => keypair,
-        Err(_) => {
-            return HttpResponse::BadRequest().json(ApiResponse::<()> {
+            return HttpResponse::Ok().json(ApiResponse::<()> {
                 success: false,
                 data: None,
                 error: Some("Invalid secret key".to_string()),
@@ -298,9 +245,20 @@ async fn sign_message(data: web::Json<SignMessageRequest>) -> impl Responder {
         }
     };
 
+    let keypair = match Keypair::from_bytes(&secret_bytes) {
+        Ok(keypair) => keypair,
+        Err(_) => {
+            return HttpResponse::Ok().json(ApiResponse::<()> {
+                success: false,
+                data: None,
+                error: Some("Invalid secret key format".to_string()),
+            });
+        }
+    };
+
     let message = data.message.as_bytes();
     let signature = keypair.sign_message(message);
-    let signature_b64 = base64::encode(signature.as_ref());
+    let signature_b64 = bs58::encode(signature.as_ref()).into_string();
 
     HttpResponse::Ok().json(ApiResponse {
         success: true,
@@ -315,17 +273,17 @@ async fn sign_message(data: web::Json<SignMessageRequest>) -> impl Responder {
 
 async fn verify_message(data: web::Json<VerifyMessageRequest>) -> impl Responder {
     if data.message.is_empty() || data.signature.is_empty() || data.pubkey.is_empty() {
-        return HttpResponse::BadRequest().json(ApiResponse::<()> {
+        return HttpResponse::Ok().json(ApiResponse::<()> {
             success: false,
             data: None,
-            error: Some("Message, signature, and pubkey are required".to_string()),
+            error: Some("Missing required fields".to_string()),
         });
     }
 
     let pubkey = match Pubkey::from_str(&data.pubkey) {
         Ok(pubkey) => pubkey,
         Err(_) => {
-            return HttpResponse::BadRequest().json(ApiResponse::<()> {
+            return HttpResponse::Ok().json(ApiResponse::<()> {
                 success: false,
                 data: None,
                 error: Some("Invalid public key".to_string()),
@@ -333,10 +291,10 @@ async fn verify_message(data: web::Json<VerifyMessageRequest>) -> impl Responder
         }
     };
 
-    let signature_bytes = match base64::decode(&data.signature) {
+    let signature_bytes = match bs58::decode(&data.signature).into_vec() {
         Ok(bytes) => bytes,
         Err(_) => {
-            return HttpResponse::BadRequest().json(ApiResponse::<()> {
+            return HttpResponse::Ok().json(ApiResponse::<()> {
                 success: false,
                 data: None,
                 error: Some("Invalid signature format".to_string()),
@@ -345,17 +303,17 @@ async fn verify_message(data: web::Json<VerifyMessageRequest>) -> impl Responder
     };
 
     if signature_bytes.len() != 64 {
-        return HttpResponse::BadRequest().json(ApiResponse::<()> {
+        return HttpResponse::Ok().json(ApiResponse::<()> {
             success: false,
             data: None,
-            error: Some("Signature must be 64 bytes".to_string()),
+            error: Some("Invalid signature length".to_string()),
         });
     }
 
     let signature_array: [u8; 64] = match signature_bytes.try_into() {
         Ok(arr) => arr,
         Err(_) => {
-            return HttpResponse::BadRequest().json(ApiResponse::<()> {
+            return HttpResponse::Ok().json(ApiResponse::<()> {
                 success: false,
                 data: None,
                 error: Some("Failed to convert signature bytes".to_string()),
@@ -379,26 +337,10 @@ async fn verify_message(data: web::Json<VerifyMessageRequest>) -> impl Responder
 }
 
 async fn send_sol(data: web::Json<SendSolRequest>) -> impl Responder {
-    if data.from.is_empty() || data.to.is_empty() {
-        return HttpResponse::BadRequest().json(ApiResponse::<()> {
-            success: false,
-            data: None,
-            error: Some("From and to addresses are required".to_string()),
-        });
-    }
-
-    if data.lamports == 0 {
-        return HttpResponse::BadRequest().json(ApiResponse::<()> {
-            success: false,
-            data: None,
-            error: Some("Lamports must be greater than zero".to_string()),
-        });
-    }
-
     let from = match Pubkey::from_str(&data.from) {
         Ok(pubkey) => pubkey,
         Err(_) => {
-            return HttpResponse::BadRequest().json(ApiResponse::<()> {
+            return HttpResponse::Ok().json(ApiResponse::<()> {
                 success: false,
                 data: None,
                 error: Some("Invalid sender address".to_string()),
@@ -409,13 +351,21 @@ async fn send_sol(data: web::Json<SendSolRequest>) -> impl Responder {
     let to = match Pubkey::from_str(&data.to) {
         Ok(pubkey) => pubkey,
         Err(_) => {
-            return HttpResponse::BadRequest().json(ApiResponse::<()> {
+            return HttpResponse::Ok().json(ApiResponse::<()> {
                 success: false,
                 data: None,
                 error: Some("Invalid recipient address".to_string()),
             });
         }
     };
+
+    if data.lamports == 0 {
+        return HttpResponse::Ok().json(ApiResponse::<()> {
+            success: false,
+            data: None,
+            error: Some("Lamports must be greater than zero".to_string()),
+        });
+    }
 
     let instruction = system_instruction::transfer(&from, &to, data.lamports);
 
@@ -434,33 +384,17 @@ async fn send_sol(data: web::Json<SendSolRequest>) -> impl Responder {
         data: Some(InstructionResponse {
             program_id: solana_sdk::system_program::id().to_string(),
             accounts,
-            instruction_data: base64::encode(instruction.data),
+            instruction_data: bs58::encode(instruction.data).into_string(),
         }),
         error: None,
     })
 }
 
 async fn send_token(data: web::Json<SendTokenRequest>) -> impl Responder {
-    if data.destination.is_empty() || data.mint.is_empty() || data.owner.is_empty() {
-        return HttpResponse::BadRequest().json(ApiResponse::<()> {
-            success: false,
-            data: None,
-            error: Some("Destination, mint, and owner are required".to_string()),
-        });
-    }
-
-    if data.amount == 0 {
-        return HttpResponse::BadRequest().json(ApiResponse::<()> {
-            success: false,
-            data: None,
-            error: Some("Amount must be greater than zero".to_string()),
-        });
-    }
-
     let destination = match Pubkey::from_str(&data.destination) {
         Ok(pubkey) => pubkey,
         Err(_) => {
-            return HttpResponse::BadRequest().json(ApiResponse::<()> {
+            return HttpResponse::Ok().json(ApiResponse::<()> {
                 success: false,
                 data: None,
                 error: Some("Invalid destination address".to_string()),
@@ -471,7 +405,7 @@ async fn send_token(data: web::Json<SendTokenRequest>) -> impl Responder {
     let mint = match Pubkey::from_str(&data.mint) {
         Ok(pubkey) => pubkey,
         Err(_) => {
-            return HttpResponse::BadRequest().json(ApiResponse::<()> {
+            return HttpResponse::Ok().json(ApiResponse::<()> {
                 success: false,
                 data: None,
                 error: Some("Invalid mint address".to_string()),
@@ -482,7 +416,7 @@ async fn send_token(data: web::Json<SendTokenRequest>) -> impl Responder {
     let owner = match Pubkey::from_str(&data.owner) {
         Ok(pubkey) => pubkey,
         Err(_) => {
-            return HttpResponse::BadRequest().json(ApiResponse::<()> {
+            return HttpResponse::Ok().json(ApiResponse::<()> {
                 success: false,
                 data: None,
                 error: Some("Invalid owner address".to_string()),
@@ -490,23 +424,23 @@ async fn send_token(data: web::Json<SendTokenRequest>) -> impl Responder {
         }
     };
 
-    let instruction = match token_instruction::transfer(
+    if data.amount == 0 {
+        return HttpResponse::Ok().json(ApiResponse::<()> {
+            success: false,
+            data: None,
+            error: Some("Amount must be greater than zero".to_string()),
+        });
+    }
+
+    let instruction = token_instruction::transfer(
         &spl_token::id(),
         &spl_associated_token_account::get_associated_token_address(&owner, &mint),
         &destination,
         &owner,
         &[],
         data.amount,
-    ) {
-        Ok(instruction) => instruction,
-        Err(_) => {
-            return HttpResponse::BadRequest().json(ApiResponse::<()> {
-                success: false,
-                data: None,
-                error: Some("Failed to create transfer instruction".to_string()),
-            });
-        }
-    };
+    )
+    .unwrap();
 
     let accounts = instruction
         .accounts
@@ -523,7 +457,7 @@ async fn send_token(data: web::Json<SendTokenRequest>) -> impl Responder {
         data: Some(InstructionResponse {
             program_id: spl_token::id().to_string(),
             accounts,
-            instruction_data: base64::encode(instruction.data),
+            instruction_data: bs58::encode(instruction.data).into_string(),
         }),
         error: None,
     })
@@ -531,9 +465,6 @@ async fn send_token(data: web::Json<SendTokenRequest>) -> impl Responder {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let port = env::var("PORT").unwrap_or_else(|_| "8080".to_string());
-    let bind_address = format!("0.0.0.0:{}", port);
-    println!("Starting server on {}", bind_address);
     HttpServer::new(|| {
         App::new()
             .route("/keypair", web::post().to(generate_keypair))
@@ -544,7 +475,7 @@ async fn main() -> std::io::Result<()> {
             .route("/send/sol", web::post().to(send_sol))
             .route("/send/token", web::post().to(send_token))
     })
-    .bind(&bind_address)?
+    .bind("127.0.0.1:8080")?
     .run()
     .await
 }
