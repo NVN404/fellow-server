@@ -463,8 +463,13 @@ async fn send_token(data: web::Json<SendTokenRequest>) -> impl Responder {
     })
 }
 
+use std::env;
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    let port = env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+    let bind_address = format!("0.0.0.0:{}", port);
+    println!("Starting server on {}", bind_address); // Log for debugging
     HttpServer::new(|| {
         App::new()
             .route("/keypair", web::post().to(generate_keypair))
@@ -475,7 +480,8 @@ async fn main() -> std::io::Result<()> {
             .route("/send/sol", web::post().to(send_sol))
             .route("/send/token", web::post().to(send_token))
     })
-    .bind("127.0.0.1:8080")?
+    .bind(&bind_address)?
     .run()
     .await
+}
 }
